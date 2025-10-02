@@ -57,9 +57,6 @@ return {
           { name = "Solarized Osaka", colorscheme = "solarized-osaka" },
         },
 
-        -- (Optional) persist file; defaults are fine too
-        themeConfigFile = vim.fn.stdpath("config")
-          .. "/lua/themery_current.lua",
         livePreview = true,
       })
     end,

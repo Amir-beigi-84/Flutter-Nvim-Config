@@ -1,10 +1,11 @@
--- Autocmds are automatically loaded on the VeryLazy event.
+-- Autocmds are automatically loaded on the VeryLazy event
+-- Default autocmds that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/autocmds.lua
+-- Add any additional autocmds here
 
--- ──────────────────────────────────────────────────────────────────────────────
--- UI: close DAP float with 'q' and keep it out of :ls
--- ──────────────────────────────────────────────────────────────────────────────
 vim.api.nvim_create_autocmd("FileType", {
-  pattern = { "dap-float" },
+  pattern = {
+    "dap-float",
+  },
   callback = function(event)
     vim.bo[event.buf].buflisted = false
     vim.keymap.set(
@@ -16,210 +17,143 @@ vim.api.nvim_create_autocmd("FileType", {
   end,
 })
 
--- ──────────────────────────────────────────────────────────────────────────────
--- Dart LSP helpers
--- ──────────────────────────────────────────────────────────────────────────────
+-- vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
+--   pattern = "*",
+--   callback = function()
+--     if vim.bo.buftype == "terminal" then
+--       vim.cmd("startinsert")
+--     end
+--   end,
+-- })
 
-local function dartls_client()
-  local list = vim.lsp.get_clients({ bufnr = 0, name = "dartls" })
-  return list and list[1] or nil
-end
+-- -- OLD WAY OF RUNNING FIX ALL
+-- vim.api.nvim_create_autocmd("BufWritePre", {
+--   pattern = "*.dart",
+--   group = vim.api.nvim_create_augroup("LspDartFixAll", {}),
+--   callback = function(args)
+--     vim.lsp.buf.code_action({
+--       context = {
+--         only = { "source.fixAll" },
+--         diagnostics = {},
+--       },
+--       apply = true,
+--     })
+--     vim.cmd("write")
+--     -- dart_fix_all(args.buf)
+--   end,
+-- })
 
-local function offset_encoding()
-  local c = dartls_client()
-  return (c and c.offset_encoding) or "utf-16"
-end
-
-local function has_parse_errors()
-  local errs =
-    vim.diagnostic.get(0, { severity = vim.diagnostic.severity.ERROR })
-  return #errs > 0
-end
-
--- Build a proper CodeActionParams with types the LS understands
-local function make_code_action_params(only_list)
-  ---@type lsp.CodeActionParams
-  local params = vim.lsp.util.make_range_params(0, offset_encoding())
-  params.context = { only = only_list, diagnostics = {} }
-  return params
-end
-
-local function request_code_actions_sync(only_list, timeout_ms)
-  local params = make_code_action_params(only_list)
-  return vim.lsp.buf_request_sync(
-    0,
-    "textDocument/codeAction",
-    params,
-    timeout_ms or 1200
+local function lsp_execute_command(val)
+  local client = vim.lsp.get_clients({ name = "dartls" })[1]
+  if not client then
+    print("No dartls client found")
+    return
+  end
+  client.request(
+    "workspace/executeCommand",
+    { command = val.command.command, arguments = val.command.arguments },
+    function(err)
+      if err then
+        print("Error executing command: " .. vim.inspect(err))
+      end
+    end
   )
 end
 
-local function apply_code_action(action)
-  if not action then
-    return false
-  end
-  local applied = false
-  if action.edit then
-    pcall(vim.lsp.util.apply_workspace_edit, action.edit, offset_encoding())
-    applied = true
-  end
-  if action.command then
-    pcall(vim.lsp.buf.execute_command, action.command)
-    applied = true
-  end
-  return applied
+local function get_current_line_diagnostics()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local diagnostics = vim.diagnostic.get(bufnr, { lnum = row - 1 })
+
+  return vim.tbl_map(function(diagnostic)
+    return {
+      code = diagnostic.code,
+      message = diagnostic.message,
+      severity = diagnostic.severity,
+      source = diagnostic.source,
+      range = {
+        start = {
+          character = diagnostic.col,
+          line = diagnostic.lnum,
+        },
+        ["end"] = {
+          character = diagnostic.end_col,
+          line = diagnostic.end_lnum,
+        },
+      },
+      data = diagnostic.user_data
+          and diagnostic.user_data.lsp
+          and diagnostic.user_data.lsp.data
+        or nil,
+      codeDescription = diagnostic.user_data
+          and diagnostic.user_data.lsp
+          and diagnostic.user_data.lsp.codeDescription
+        or nil,
+      tags = diagnostic.user_data
+          and diagnostic.user_data.lsp
+          and diagnostic.user_data.lsp.tags
+        or nil,
+      relatedInformation = diagnostic.user_data
+          and diagnostic.user_data.lsp
+          and diagnostic.user_data.lsp.relatedInformation
+        or nil,
+    }
+  end, diagnostics)
 end
 
-local function apply_actions(results)
-  if not results then
-    return false
-  end
-  local any = false
-  for _, res in pairs(results) do
-    for _, action in ipairs(res.result or {}) do
-      if apply_code_action(action) then
-        any = true
+local function code_action_fix_all()
+  local context = { diagnostics = get_current_line_diagnostics() }
+  local params = vim.lsp.util.make_range_params()
+  params.context = context
+
+  vim.lsp.buf_request(
+    0,
+    "textDocument/codeAction",
+    params,
+    function(err, results_lsp)
+      if err then
+        if err.message then
+          vim.notify(err.message, vim.log.levels.ERROR)
+        else
+          vim.notify(vim.inspect(err), vim.log.levels.ERROR)
+        end
+        return
       end
-    end
-  end
-  return any
-end
 
-local function organize_imports_if_clean()
-  if not dartls_client() or has_parse_errors() then
-    return false
-  end
-  local results = request_code_actions_sync({ "source.organizeImports" }, 1200)
-  return apply_actions(results)
-end
+      if not results_lsp or vim.tbl_isempty(results_lsp) then
+        print("No code actions available")
+        return
+      end
 
-local function fix_all_sync()
-  if not dartls_client() then
-    return false
-  end
-  local results = request_code_actions_sync({ "source.fixAll" }, 1500)
-  local applied = apply_actions(results)
-  if applied then
-    return true
-  end
-
-  -- Fallback: look for explicit dart.edit.fixAll
-  ---@type lsp.CodeActionParams
-  local any_params = vim.lsp.util.make_range_params(0, offset_encoding())
-  any_params.context = { diagnostics = {} }
-  local all =
-    vim.lsp.buf_request_sync(0, "textDocument/codeAction", any_params, 1500)
-  if all then
-    for _, res in pairs(all) do
-      for _, action in ipairs(res.result or {}) do
-        local cmd = action.command and action.command.command or nil
-        if cmd == "dart.edit.fixAll" then
-          if apply_code_action(action) then
-            return true
-          end
+      for _, result in ipairs(results_lsp) do
+        if
+          result
+          and result.command
+          and result.command.command == "dart.edit.fixAll"
+        then
+          lsp_execute_command(result)
         end
       end
     end
-  end
-  return false
+  )
 end
 
--- ──────────────────────────────────────────────────────────────────────────────
--- Hoist stray imports/exports to top so organize-imports won’t fail
--- ──────────────────────────────────────────────────────────────────────────────
-local function dart_hoist_imports()
-  local bufnr = vim.api.nvim_get_current_buf()
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  if #lines == 0 then
-    return
-  end
-
-  local keep, moved, seen = {}, {}, {}
-  local function starts(s, pat)
-    return s:match("^%s*" .. pat) ~= nil
-  end
-  local function is_directive(s)
-    return starts(s, "import%s+") or starts(s, "export%s+")
-  end
-
-  for _, s in ipairs(lines) do
-    if is_directive(s) then
-      local trimmed = s:gsub("%s+$", "")
-      if not seen[trimmed] then
-        table.insert(moved, trimmed)
-        seen[trimmed] = true
-      end
-    else
-      table.insert(keep, s)
-    end
-  end
-  if #moved == 0 then
-    return
-  end
-
-  -- insertion point after optional comments/blank + optional library/part of
-  local i = 1
-  while keep[i] and (starts(keep[i], "//") or keep[i]:match("^%s*$")) do
-    i = i + 1
-  end
-  if
-    keep[i]
-    and (starts(keep[i], "library%s+") or starts(keep[i], "part%s+of%s+"))
-  then
-    i = i + 1
-    while keep[i] and keep[i]:match("^%s*$") do
-      i = i + 1
-    end
-  end
-
-  local new = {}
-  for j = 1, i - 1 do
-    new[#new + 1] = keep[j]
-  end
-  for _, s in ipairs(moved) do
-    new[#new + 1] = s
-  end
-  new[#new + 1] = ""
-  for j = i, #keep do
-    new[#new + 1] = keep[j]
-  end
-
-  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new)
-end
-
--- ──────────────────────────────────────────────────────────────────────────────
--- Dart on-save pipeline: Hoist → Organize Imports → Fix All → Format
--- ──────────────────────────────────────────────────────────────────────────────
-local dart_group =
-  vim.api.nvim_create_augroup("LspDartOnSave", { clear = true })
-
-vim.api.nvim_create_autocmd("BufWritePre", {
-  group = dart_group,
+local group = vim.api.nvim_create_augroup("LspDartFixAll", { clear = true })
+vim.api.nvim_create_autocmd({ "BufWritePre" }, {
+  group = group,
   pattern = "*.dart",
   callback = function()
-    pcall(dart_hoist_imports)
-
-    local ok_oi, err_oi = pcall(organize_imports_if_clean)
-    if not ok_oi and err_oi then
-      vim.notify(
-        "Organize Imports error: " .. tostring(err_oi),
-        vim.log.levels.WARN
-      )
-    end
-
-    local ok_fix, err_fix = pcall(fix_all_sync)
-    if not ok_fix and err_fix then
-      vim.notify("Fix All error: " .. tostring(err_fix), vim.log.levels.WARN)
-    end
-
-    local client = dartls_client()
-    local ok_fmt, err_fmt = pcall(vim.lsp.buf.format, {
-      async = false,
-      timeout_ms = 1500,
-      id = client and client.id or nil,
-    })
-    if not ok_fmt and err_fmt then
-      vim.notify("Format error: " .. tostring(err_fmt), vim.log.levels.WARN)
+    local ok, err = pcall(code_action_fix_all)
+    if not ok then
+      vim.notify("Fix All error: " .. tostring(err), vim.log.levels.ERROR)
+    else
+      local format_ok, format_err = pcall(vim.lsp.buf.format)
+      if not format_ok then
+        vim.notify(
+          "Format error: " .. tostring(format_err),
+          vim.log.levels.ERROR
+        )
+      end
     end
   end,
 })

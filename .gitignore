@@ -4,3 +4,4 @@
 
 # Keep lazy.nvim lockfile
 !lazy-lock.json
+!init.lua
