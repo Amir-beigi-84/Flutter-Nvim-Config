@@ -1,4 +1,4 @@
-# Amir's LazyVim Neovim Setup
+# LazyVim + Neovim Setup
 
 <p align="center">
   <a href="https://neovim.io">
@@ -92,30 +92,7 @@ A cross-platform Neovim configuration centered around LazyVim, Dart/Flutter craf
 - Launching through the VSCode Neovim extension activates `lua/plugins/vscode.lua`, which narrows the plugin list and remaps core shortcuts to VS Code commands.
 - GUI users get instant Neovide support; other GUIs honor the same settings through standard Neovim options.
 
-## Live Widgets
-Current repo metrics and profile links:
 
-<p align="center">
-  <a href="https://github.com/Amir-beigi-84/Flutter-Nvim-Config">
-    <img src="https://img.shields.io/github/stars/Amir-beigi-84/Flutter-Nvim-Config?style=for-the-badge&amp;logo=github" alt="GitHub stars" />
-  </a>
-  <a href="https://github.com/Amir-beigi-84/Flutter-Nvim-Config/actions">
-    <img src="https://img.shields.io/github/actions/workflow/status/Amir-beigi-84/Flutter-Nvim-Config/ci.yml?branch=main&amp;style=for-the-badge&amp;label=CI" alt="CI status badge" />
-  </a>
-  <a href="https://github.com/Amir-beigi-84/Flutter-Nvim-Config/issues">
-    <img src="https://img.shields.io/github/issues/Amir-beigi-84/Flutter-Nvim-Config?style=for-the-badge&amp;logo=github" alt="Open issues" />
-  </a>
-  <a href="https://github.com/Amir-beigi-84/Flutter-Nvim-Config/commits/main">
-    <img src="https://img.shields.io/github/last-commit/Amir-beigi-84/Flutter-Nvim-Config?style=for-the-badge" alt="Last commit" />
-  </a>
-  <a href="https://www.linkedin.com/in/amir-beigi-code/">
-    <img src="https://img.shields.io/badge/LinkedIn-Amir%20Beigi-0A66C2?style=for-the-badge&amp;logo=linkedin&amp;logoColor=white" alt="LinkedIn profile" />
-  </a>
-</p>
-
-Optional extras you can add later:
-- A `docs/` folder with dashboard screenshots referenced via standard Markdown: `![Lazy dashboard](docs/dashboard.png)`.
-- A pinned gist of key mappings or an asciinema session recorded with `asciinema rec`.
 
 ## Theme Switching Cheatsheet
 - Run `:Themery` or `:Themery random` to pick a palette.
